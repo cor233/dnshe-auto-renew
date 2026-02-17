@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DNSHE 免费域名自动续期脚本
-支持多账号，尝试续期所有子域名，输出 Markdown 摘要到 GITHUB_STEP_SUMMARY
+DNSHE 免费域名自动续期脚本（多账号）
+遍历所有账号下的子域名，尝试续期，结果写入 GITHUB_STEP_SUMMARY
 """
 
 import os
@@ -13,14 +13,15 @@ from datetime import datetime
 import requests
 
 API_BASE = "https://api005.dnshe.com/index.php?m=domain_hub"
-HEADERS = {"Content-Type": "application/json"}
+HEADERS_TEMPLATE = {"Content-Type": "application/json"}
 
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 def call_api(endpoint, action, method="GET", api_key=None, api_secret=None, data=None):
+    """通用 API 调用函数"""
     url = f"{API_BASE}&endpoint={endpoint}&action={action}"
-    headers = HEADERS.copy()
+    headers = HEADERS_TEMPLATE.copy()
     if api_key:
         headers["X-API-Key"] = api_key
     if api_secret:
@@ -39,6 +40,7 @@ def call_api(endpoint, action, method="GET", api_key=None, api_secret=None, data
         return {"success": False, "error": str(e)}
 
 def renew_subdomain(api_key, api_secret, subdomain_id, full_domain):
+    """续期单个子域名"""
     log(f"尝试续期 {full_domain} (ID: {subdomain_id})")
     result = call_api(
         endpoint="subdomains",
@@ -53,25 +55,25 @@ def renew_subdomain(api_key, api_secret, subdomain_id, full_domain):
         log(f"✅ {full_domain} 续期成功，新到期时间: {new_expires}")
         return {
             "status": "success",
-            "message": f"续期成功，新到期时间 {new_expires}",
-            "details": result
+            "message": f"续期成功，新到期时间 {new_expires}"
         }
     else:
         error_msg = result.get("message") or result.get("error") or "未知错误"
         log(f"❌ {full_domain} 续期失败: {error_msg}")
         return {
             "status": "failed",
-            "message": error_msg,
-            "details": result
+            "message": error_msg
         }
 
 def process_account(account):
+    """处理单个账号：列出所有子域名并尝试续期"""
     api_key = account.get("key")
     api_secret = account.get("secret")
     if not api_key or not api_secret:
         log("账号缺少 key 或 secret，跳过")
         return None
 
+    # 获取子域名列表
     list_res = call_api(
         endpoint="subdomains",
         action="list",
@@ -81,7 +83,7 @@ def process_account(account):
     )
     if not list_res.get("success"):
         log(f"获取子域名列表失败: {list_res}")
-        return {"error": list_res.get("message", "列表获取失败")}
+        return {"error": list_res.get("message") or list_res.get("error", "列表获取失败")}
 
     subdomains = list_res.get("subdomains", [])
     if not subdomains:
@@ -97,7 +99,6 @@ def process_account(account):
         res = renew_subdomain(api_key, api_secret, sub_id, full_domain)
         results.append({
             "domain": full_domain,
-            "id": sub_id,
             "result": res
         })
     return {"results": results}
@@ -125,6 +126,7 @@ def main():
             "result": res
         })
 
+    # 写入 GitHub Step Summary
     summary_file = os.getenv("GITHUB_STEP_SUMMARY")
     if summary_file:
         with open(summary_file, "w", encoding="utf-8") as f:
@@ -134,7 +136,9 @@ def main():
             for idx, acc_res in enumerate(all_results):
                 f.write(f"## 账号 {idx+1}\n\n")
                 res = acc_res["result"]
-                if "error" in res:
+                if not res:
+                    f.write("账号配置无效，已跳过\n\n")
+                elif "error" in res:
                     f.write(f"❌ 处理失败: {res['error']}\n\n")
                 elif "message" in res:
                     f.write(f"ℹ️ {res['message']}\n\n")
