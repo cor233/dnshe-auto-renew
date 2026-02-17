@@ -1,0 +1,30 @@
+name: 自动续期 DNSHE 免费域名
+
+on:
+  schedule:
+    # 每月1号 UTC 0:00 运行（北京时间每月1号 8:00）
+    - cron: '0 0 1 * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install requests
+
+      - name: 执行续期脚本
+        env:
+          ACCOUNTS_JSON: ${{ secrets.ACCOUNTS }}
+        run: python renew.py
+
+      - name: 输出续期摘要
+        run: cat $GITHUB_STEP_SUMMARY
