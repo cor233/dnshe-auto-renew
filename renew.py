@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DNSHE 免费域名自动续期脚本（多账号）
-遍历所有账号下的子域名，尝试续期，结果写入 GITHUB_STEP_SUMMARY
+DNSHE 免费域名自动续期脚本（多账号，增强错误反馈）
+支持将续期结果写入 GitHub Step Summary
 """
 
 import os
@@ -19,7 +19,7 @@ def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 def call_api(endpoint, action, method="GET", api_key=None, api_secret=None, data=None):
-    """通用 API 调用函数"""
+    """通用 API 调用函数，返回解析后的 JSON 或错误信息"""
     url = f"{API_BASE}&endpoint={endpoint}&action={action}"
     headers = HEADERS_TEMPLATE.copy()
     if api_key:
@@ -33,14 +33,49 @@ def call_api(endpoint, action, method="GET", api_key=None, api_secret=None, data
             resp = requests.get(url, headers=headers, timeout=30)
         else:
             resp = requests.post(url, headers=headers, json=data, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+
+        # 尝试解析 JSON
+        try:
+            result = resp.json()
+        except ValueError:
+            # 不是 JSON，可能是 HTML 或其他文本
+            content_type = resp.headers.get('Content-Type', '')
+            if 'text/html' in content_type:
+                return {
+                    "success": False,
+                    "error": f"服务器返回 HTML 页面 (HTTP {resp.status_code})，可能权限不足或需要登录",
+                    "http_status": resp.status_code
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"服务器返回非 JSON 响应 (HTTP {resp.status_code})",
+                    "http_status": resp.status_code
+                }
+
+        # HTTP 状态码检查
+        if resp.status_code != 200:
+            error_msg = result.get('message') or result.get('error') or f"HTTP {resp.status_code}"
+            # 附加常见状态码说明
+            if resp.status_code == 403:
+                error_msg += "（域名尚未进入续期窗口，需到期前180天内续期）"
+            elif resp.status_code == 401:
+                error_msg += "（认证失败，请检查 API Key/Secret）"
+            elif resp.status_code == 429:
+                error_msg += "（请求过于频繁，请稍后再试）"
+            return {"success": False, "error": error_msg, "http_status": resp.status_code}
+
+        return result
+
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "请求超时"}
+    except requests.exceptions.ConnectionError:
+        return {"success": False, "error": "网络连接失败"}
     except Exception as e:
-        log(f"API 调用失败: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": f"请求异常: {str(e)}"}
 
 def renew_subdomain(api_key, api_secret, subdomain_id, full_domain):
-    """续期单个子域名"""
+    """续期单个子域名，返回状态和消息"""
     log(f"尝试续期 {full_domain} (ID: {subdomain_id})")
     result = call_api(
         endpoint="subdomains",
@@ -50,6 +85,7 @@ def renew_subdomain(api_key, api_secret, subdomain_id, full_domain):
         api_secret=api_secret,
         data={"subdomain_id": subdomain_id}
     )
+
     if result.get("success"):
         new_expires = result.get("new_expires_at", "未知")
         log(f"✅ {full_domain} 续期成功，新到期时间: {new_expires}")
@@ -59,6 +95,7 @@ def renew_subdomain(api_key, api_secret, subdomain_id, full_domain):
         }
     else:
         error_msg = result.get("message") or result.get("error") or "未知错误"
+        # 如果返回了 HTTP 状态码，附加友好说明（已在 call_api 中处理，这里直接取 error_msg）
         log(f"❌ {full_domain} 续期失败: {error_msg}")
         return {
             "status": "failed",
@@ -82,8 +119,9 @@ def process_account(account):
         api_secret=api_secret
     )
     if not list_res.get("success"):
-        log(f"获取子域名列表失败: {list_res}")
-        return {"error": list_res.get("message") or list_res.get("error", "列表获取失败")}
+        error_msg = list_res.get("message") or list_res.get("error") or "列表获取失败"
+        log(f"获取子域名列表失败: {error_msg}")
+        return {"error": error_msg}
 
     subdomains = list_res.get("subdomains", [])
     if not subdomains:
@@ -147,8 +185,8 @@ def main():
                     if not results:
                         f.write("无子域名\n\n")
                     else:
-                        f.write("| 域名 | 状态 | 信息 |\n")
-                        f.write("|------|------|------|\n")
+                        f.write("| 域名 | 状态 | 详细信息 |\n")
+                        f.write("|------|------|----------|\n")
                         for r in results:
                             status_icon = "✅" if r["result"]["status"] == "success" else "❌"
                             f.write(f"| {r['domain']} | {status_icon} | {r['result']['message']} |\n")
