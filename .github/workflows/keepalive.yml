@@ -14,8 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      contents: write
 
     steps:
+      - name: 创建标签
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create keepalive --color cccccc --description "自动保活" --repo ${{ github.repository }} 2>/dev/null || true
+
       - name: 创建保活 Issue
         id: create
         env:
