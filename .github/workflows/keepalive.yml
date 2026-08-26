@@ -1,0 +1,76 @@
+name: 仓库保活
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查活跃度
+        id: check
+        run: |
+          LAST_EPOCH=$(git log -1 --format=%ct)
+          NOW_EPOCH=$(date +%s)
+          DAYS=$(( (NOW_EPOCH - LAST_EPOCH) / 86400 ))
+          echo "days=$DAYS" >> "$GITHUB_OUTPUT"
+          [ "$DAYS" -lt 50 ] && echo "skip=true" >> "$GITHUB_OUTPUT" || echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: 创建保活 Issue
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const date = new Date().toISOString().slice(0, 10);
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `keepalive: ${date}`,
+              body: '自动保活，防止 Actions 被暂停。',
+              labels: ['keepalive']
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed',
+              state_reason: 'completed'
+            });
+
+      - name: 清理旧 Issue
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'keepalive',
+              state: 'all',
+              per_page: 100
+            });
+            const toClose = issues
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(3);
+            for (const issue of toClose) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed'
+              });
+            }
