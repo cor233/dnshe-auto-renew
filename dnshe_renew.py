@@ -333,7 +333,7 @@ def run_renewal(accounts_json, renew_days_before=30):
 
 if __name__ == "__main__":
     accounts_json = os.environ.get("ACCOUNTS", "[]")
-    renew_days = int(os.environ.get("RENEW_DAYS_BEFORE", "30"))
+    renew_days = int(os.environ.get("RENEW_DAYS_BEFORE", "180"))
 
     if not accounts_json or accounts_json == "[]":
         print("❌ 环境变量 ACCOUNTS 未设置或为空")
