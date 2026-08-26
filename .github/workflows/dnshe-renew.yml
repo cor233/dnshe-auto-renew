@@ -4,15 +4,6 @@ on:
   schedule:
     - cron: '0 0 * * 1'
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: '模拟运行（不实际续期）'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
 
 jobs:
   renew:
@@ -34,7 +25,6 @@ jobs:
         env:
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
           RENEW_DAYS_BEFORE: ${{ vars.RENEW_DAYS_BEFORE || '30' }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: python dnshe_renew.py
 
       - name: 失败告警
