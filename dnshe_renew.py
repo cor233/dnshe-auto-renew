@@ -54,9 +54,6 @@ class DNSHEClient:
             "subdomain_id": subdomain_id
         })
 
-    def get_quota(self):
-        return self.request("quota", "", method="GET")
-
 
 def gh_output(name, value):
     if os.environ.get("GITHUB_ACTIONS") == "true":
@@ -83,8 +80,7 @@ def run_renewal(accounts_json, renew_days_before=30, dry_run=False):
         "renewed": [],
         "skipped": [],
         "failed": [],
-        "not_yet_available": [],
-        "quota_warnings": []
+        "not_yet_available": []
     }
 
     now = datetime.now()
@@ -93,10 +89,10 @@ def run_renewal(accounts_json, renew_days_before=30, dry_run=False):
     for idx, acc in enumerate(accounts, 1):
         api_key = acc.get("key", "")
         api_secret = acc.get("secret", "")
-        account_label = mask_key(api_key)
+        account_label = f"账号 #{idx}"
 
         print(f"\n{'='*60}")
-        print(f"📋 账号 #{idx}  ({account_label})")
+        print(f"📋 {account_label}  ({mask_key(api_key)})")
         print(f"{'='*60}")
 
         if not api_key or not api_secret:
@@ -106,18 +102,6 @@ def run_renewal(accounts_json, renew_days_before=30, dry_run=False):
             continue
 
         client = DNSHEClient(api_key, api_secret)
-
-        quota_res = client.get_quota()
-        if quota_res.get("success"):
-            q = quota_res.get("quota", {})
-            available = q.get("available", 0)
-            print(f"💳 配额: 已用 {q.get('used', 0)} / 总额 {q.get('total', 0)} (可用 {available})")
-            if available <= 0:
-                print(f"⚠️  配额已用完，跳过此账号")
-                summary["quota_warnings"].append({"account": account_label, "available": available})
-                continue
-        else:
-            print(f"⚠️  配额查询失败: {quota_res.get('message', '未知错误')}")
 
         all_subdomains = []
         page = 1
@@ -207,14 +191,11 @@ def run_renewal(accounts_json, renew_days_before=30, dry_run=False):
                 err_msg = renew_result.get("message", renew_result.get("error", "未知错误"))
 
                 if error_code == "renewal_not_yet_available":
-                    print(f"⏳ 未达续期窗口")
+                    remaining = renew_result.get("remaining_days") or renew_result.get("remaining_time") or "未知"
+                    print(f"⏳ 未达续期窗口 (剩余 {remaining})")
                     summary["not_yet_available"].append({
-                        "account": account_label, "domain": full_domain, "message": err_msg
+                        "account": account_label, "domain": full_domain, "message": err_msg, "remaining": remaining
                     })
-                elif error_code == "quota_exceeded":
-                    print(f"❌ 配额不足")
-                    summary["failed"].append({"account": account_label, "domain": full_domain, "error_code": error_code, "message": err_msg})
-                    exit_code = 1
                 else:
                     print(f"❌ 失败 [{error_code}]: {err_msg}")
                     summary["failed"].append({
@@ -234,8 +215,6 @@ def run_renewal(accounts_json, renew_days_before=30, dry_run=False):
     print(f"⏳ 未达窗口:   {len(summary['not_yet_available'])}")
     print(f"⏭️  跳过:      {len(summary['skipped'])}")
     print(f"❌ 失败:       {len(summary['failed'])}")
-    if summary["quota_warnings"]:
-        print(f"⚠️  配额告警:   {len(summary['quota_warnings'])}")
 
     gh_output("renewed_count", str(len(summary["renewed"])))
     gh_output("failed_count", str(len(summary["failed"])))
