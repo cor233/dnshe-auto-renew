@@ -42,10 +42,10 @@ jobs:
           gh issue list \
             --repo ${{ github.repository }} \
             --label keepalive \
-            --state all \
+            --state open \
             --limit 100 \
             --json number,createdAt \
             --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].number' \
           | while read -r num; do
-              gh issue close "$num" --repo ${{ github.repository }} || true
+              gh issue close "$num" --repo ${{ github.repository }} --reason completed
             done
