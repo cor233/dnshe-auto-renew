@@ -8,7 +8,7 @@ on:
 jobs:
   renew:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -26,18 +26,3 @@ jobs:
           ACCOUNTS: ${{ secrets.ACCOUNTS }}
           RENEW_DAYS_BEFORE: ${{ vars.RENEW_DAYS_BEFORE || '30' }}
         run: python dnshe_renew.py
-
-      - name: 失败告警
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = '❌ DNSHE 域名续期失败';
-            const body = `工作流运行失败，请检查日志: ${context.payload.repository.html_url}/actions/runs/${context.runId}`;
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: title,
-              body: body,
-              labels: ['dnshe', 'auto-renew', 'alert']
-            });
