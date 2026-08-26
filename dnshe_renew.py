@@ -83,7 +83,7 @@ def gh_output(name, value):
                 f.write(f"{name}={value}\n")
 
 
-def process_account(acc, idx, renew_days_before, now):
+def process_account(acc, idx, now):
     api_key = acc.get("key", "")
     api_secret = acc.get("secret", "")
     account_label = f"账号 #{idx}"
@@ -178,7 +178,7 @@ def process_account(acc, idx, renew_days_before, now):
         if status in ("suspended", "expired"):
             should_renew = True
             reason = f"状态={status}"
-        elif status == "active" and days_until_expire is not None and days_until_expire <= renew_days_before:
+        elif status == "active" and days_until_expire is not None and days_until_expire <= 180:
             should_renew = True
             reason = f"剩余{days_until_expire}天"
 
@@ -249,7 +249,7 @@ def process_account(acc, idx, renew_days_before, now):
     }
 
 
-def run_renewal(accounts_json, renew_days_before=30):
+def run_renewal(accounts_json):
     try:
         accounts = json.loads(accounts_json)
     except json.JSONDecodeError as e:
@@ -275,7 +275,7 @@ def run_renewal(accounts_json, renew_days_before=30):
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         futures = {
-            executor.submit(process_account, acc, idx, renew_days_before, now): idx
+            executor.submit(process_account, acc, idx, now): idx
             for idx, acc in enumerate(accounts, 1)
         }
         for future in as_completed(futures):
@@ -333,10 +333,9 @@ def run_renewal(accounts_json, renew_days_before=30):
 
 if __name__ == "__main__":
     accounts_json = os.environ.get("ACCOUNTS", "[]")
-    renew_days = int(os.environ.get("RENEW_DAYS_BEFORE", "180"))
 
     if not accounts_json or accounts_json == "[]":
         print("❌ 环境变量 ACCOUNTS 未设置或为空")
         sys.exit(1)
 
-    run_renewal(accounts_json, renew_days)
+    run_renewal(accounts_json)
