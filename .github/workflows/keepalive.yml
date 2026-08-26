@@ -14,24 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      contents: read
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: 检查活跃度
-        id: check
-        run: |
-          LAST_EPOCH=$(git log -1 --format=%ct)
-          NOW_EPOCH=$(date +%s)
-          DAYS=$(( (NOW_EPOCH - LAST_EPOCH) / 86400 ))
-          echo "days=$DAYS" >> "$GITHUB_OUTPUT"
-          [ "$DAYS" -lt 50 ] && echo "skip=true" >> "$GITHUB_OUTPUT" || echo "skip=false" >> "$GITHUB_OUTPUT"
-
       - name: 创建保活 Issue
-        if: steps.check.outputs.skip == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -52,7 +37,6 @@ jobs:
             });
 
       - name: 清理旧 Issue
-        if: steps.check.outputs.skip == 'false'
         uses: actions/github-script@v7
         with:
           script: |
@@ -63,14 +47,12 @@ jobs:
               state: 'all',
               per_page: 100
             });
-            const toClose = issues
+            issues
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(3);
-            for (const issue of toClose) {
-              await github.rest.issues.update({
+              .slice(3)
+              .forEach(i => github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: issue.number,
+                issue_number: i.number,
                 state: 'closed'
-              });
-            }
+              }));
