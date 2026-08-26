@@ -16,43 +16,14 @@ jobs:
       issues: write
 
     steps:
-      - name: 创建保活 Issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const date = new Date().toISOString().slice(0, 10);
-            const { data: issue } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `keepalive: ${date}`,
-              body: '自动保活，防止 Actions 被暂停。',
-              labels: ['keepalive']
-            });
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              state: 'closed',
-              state_reason: 'completed'
-            });
-
-      - name: 清理旧 Issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: 'keepalive',
-              state: 'all',
-              per_page: 100
-            });
-            issues
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-              .slice(3)
-              .forEach(i => github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: i.number,
-                state: 'closed'
-              }));
+      - name: 创建并关闭保活 Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          gh issue create \
+            --repo ${{ github.repository }} \
+            --title "keepalive: $DATE" \
+            --body "自动保活，防止 Actions 被暂停。" \
+            --label keepalive \
+            --close-reason completed
