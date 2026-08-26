@@ -16,14 +16,36 @@ jobs:
       issues: write
 
     steps:
-      - name: 创建并关闭保活 Issue
+      - name: 创建保活 Issue
+        id: create
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
-          gh issue create \
+          URL=$(gh issue create \
             --repo ${{ github.repository }} \
             --title "keepalive: $DATE" \
             --body "自动保活，防止 Actions 被暂停。" \
+            --label keepalive)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: 关闭保活 Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close ${{ steps.create.outputs.url }} --reason completed
+
+      - name: 清理旧 Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue list \
+            --repo ${{ github.repository }} \
             --label keepalive \
-            --close-reason completed
+            --state all \
+            --limit 100 \
+            --json number,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].number' \
+          | while read -r num; do
+              gh issue close "$num" --repo ${{ github.repository }} || true
+            done
